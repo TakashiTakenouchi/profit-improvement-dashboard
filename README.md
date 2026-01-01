@@ -129,7 +129,7 @@ MIT License
 
 ## 作成者
 
-Claude Code
+Takshi.Takenouchi
 
 ---
 
