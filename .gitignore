@@ -41,6 +41,8 @@ env/
 *.xls
 *.csv
 !requirements.txt
+# Allow sample data in data/ folder for Render deployment
+!data/*.xlsx
 
 # Model files
 autogluon_ts_models/

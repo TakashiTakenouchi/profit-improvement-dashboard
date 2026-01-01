@@ -9,23 +9,29 @@ import os
 from typing import Optional, Tuple
 
 
+def get_app_base_dir() -> str:
+    """アプリケーションのベースディレクトリを取得（Render/ローカル両対応）"""
+    # components/data_loader.py → streamlit_app/
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 def get_sample_data_path() -> str:
-    """サンプルデータのパスを取得"""
-    # 相対パスで親ディレクトリのデータを参照
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    return os.path.join(base_dir, "fixed_extended_store_data_2024-FIX_kaizen_monthlyvol6_new.xlsx")
+    """サンプルデータのパスを取得（Render環境対応）"""
+    app_dir = get_app_base_dir()
+    # streamlit_app/data/ 内のファイルを参照
+    return os.path.join(app_dir, "data", "fixed_extended_store_data_2024-FIX_kaizen_monthlyvol6_new.xlsx")
 
 
 def get_forecast_data_path() -> str:
-    """予測結果データのパスを取得"""
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    return os.path.join(base_dir, "output", "forecast_results_2026_90days.xlsx")
+    """予測結果データのパスを取得（Render環境対応）"""
+    app_dir = get_app_base_dir()
+    return os.path.join(app_dir, "data", "forecast_results_2026_90days.xlsx")
 
 
 def get_timeseries_data_path() -> str:
-    """時系列データのパスを取得"""
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    return os.path.join(base_dir, "output", "time_series_forecast_data_2024_fixed.xlsx")
+    """時系列データのパスを取得（Render環境対応）"""
+    app_dir = get_app_base_dir()
+    return os.path.join(app_dir, "data", "time_series_forecast_data_2024_fixed.xlsx")
 
 
 @st.cache_data
