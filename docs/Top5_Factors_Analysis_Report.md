@@ -78,7 +78,7 @@ TheoreticalBasisは現在**ItemCode単位**（高価格帯/中価格帯/低価�
 
 ### 4.1 月次統計分析（損益データ）
 
-![月次ヒストグラム](../output/top5_factors_histogram.png)
+![月次ヒストグラム](output/top5_factors_histogram.png)
 
 #### 4.1.1 WOMEN'S_JACKETS2（1位）
 
@@ -141,7 +141,7 @@ TheoreticalBasisは現在**ItemCode単位**（高価格帯/中価格帯/低価�
 
 ### 4.2 日次統計分析（時系列データ）
 
-![日次ヒストグラム](../output/daily_quantity_histogram.png)
+![日次ヒストグラム](output/daily_quantity_histogram.png)
 
 #### 日次販売数量の分布特性
 
