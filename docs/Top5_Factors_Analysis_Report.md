@@ -12,6 +12,7 @@
 6. [AutoGluon-TimeSeriesでのモデル検証](#6-autogluon-timeseriesでのモデル検証)
 7. [推奨アクションサマリー](#7-推奨アクションサマリー)
 8. [GitHub/Render更新手順](#8-githubrender更新手順)
+9. [最終仕様サマリー](#9-最終仕様サマリー)
 
 ---
 
@@ -505,14 +506,104 @@ Renderは`render.yaml`の設定によりGitHubのmainブランチにプッシュ
 
 ---
 
+## 9. 最終仕様サマリー
+
+### 9.1 時系列予測モデル仕様
+
+| カテゴリ | 分布特性 | 推奨モデル | 評価指標 | 備考 |
+|---------|---------|-----------|---------|------|
+| WOMEN'S_JACKETS2 | 正規分布ベース | Chronos2 + TFT | WQL | 季節性＋イベント需要対応 |
+| Number_of_guests | NegBin（分散/平均=226） | DeepAR (NegBin) + 共変量 | WQL | 極度の過分散、曜日・天候共変量必須 |
+| WOMEN'S_ONEPIECE | ZIP（ゼロ率13.4%） | Chronos2 + TFT | WQL | ゼロ過剰＋季節性対応 |
+| Mens_KNIT | ポアソン分布 | Chronos2 | WQL | 季節カテゴリ |
+| Mens_PANTS | NegBin（分散/平均=11.2） | DeepAR (NegBin) + TFT | WQL | **実証済み**: WQL=0.2200 |
+
+### 9.2 AutoGluon-TimeSeries実装仕様
+
+```python
+# 推奨設定（過分散カウントデータ向け）
+from autogluon.timeseries import TimeSeriesPredictor
+from gluonts.torch.distributions import NegativeBinomialOutput
+
+predictor = TimeSeriesPredictor(
+    prediction_length=30,
+    eval_metric='WQL',           # 確率予測評価に最適
+    quantile_levels=[0.1, 0.5, 0.9],
+    freq='D'
+)
+
+predictor.fit(
+    train_data,
+    hyperparameters={
+        'DeepAR': {
+            'distr_output': NegativeBinomialOutput(),  # NegBin分布
+            'context_length': 60,
+            'num_layers': 2,
+            'hidden_size': 40,
+            'max_epochs': 50,
+        },
+        'Chronos': {'model_path': 'bolt_small'},  # Zero-shot
+    },
+    time_limit=600,
+)
+```
+
+### 9.3 Streamlitアプリ統合仕様
+
+| ページ | ファイル | 機能 |
+|--------|---------|------|
+| 7_統計分析レポート | `pages/7_統計分析レポート.py` | インタラクティブレポート表示 |
+
+**表示セクション:**
+1. 概要 - TOP5要因一覧
+2. ヒストグラム分析 - PNG画像表示（月次/日次）
+3. 確率分布理論 - NegBin/ZIP解説（タブ切替）
+4. モデル比較結果 - WQLチャート表示
+5. 推奨アクション - カテゴリ別推奨
+6. フルレポート - Markdown表示＋ダウンロード
+
+### 9.4 デプロイ仕様
+
+| 項目 | 設定値 |
+|------|--------|
+| プラットフォーム | Render (Web Service) |
+| リポジトリ | https://github.com/TakashiTakenouchi/profit-improvement-dashboard |
+| ブランチ | main |
+| 自動デプロイ | 有効 (`autoDeploy: true`) |
+| Python | 3.11 |
+| フレームワーク | Streamlit |
+
+### 9.5 技術的注意点
+
+1. **Windows日本語パス問題**
+   - joblib TEMPフォルダーに日本語ユーザー名が含まれる場合、環境変数で回避
+   ```python
+   os.environ['TEMP'] = r"C:\path\to\ascii\temp"
+   os.environ['JOBLIB_TEMP_FOLDER'] = r"C:\path\to\ascii\temp"
+   ```
+
+2. **NegBin分布入力形式**
+   - `distr_output`は文字列ではなく`NegativeBinomialOutput()`オブジェクトを指定
+
+3. **整数データ要件**
+   - NegBin分布はカウントデータ（整数）を想定
+   ```python
+   data['target'] = data['target'].round().astype(int).clip(lower=0)
+   ```
+
+---
+
 ## バージョン履歴
 
-| バージョン | 日付 | 変更内容 |
-|-----------|------|---------|
-| 1.0.0 | 2026-01-02 | 初版作成 |
-| 1.1.0 | 2026-01-02 | Mens_PANTS NegBin vs Chronos-Bolt実行結果追加（セクション7.5.1） |
+| バージョン | 日付 | 更新者 | 変更内容 |
+|-----------|------|--------|---------|
+| 1.0.0 | 2026-01-02 | Takashi.Takenouchi | 初版作成 |
+| 1.1.0 | 2026-01-02 | Takashi.Takenouchi | Mens_PANTS NegBin vs Chronos-Bolt実行結果追加（セクション7.5.1） |
+| 1.2.0 | 2026-01-02 | Takashi.Takenouchi | 最終仕様サマリー追加（セクション9）、Streamlitアプリ統合 |
 
 ---
 
 **作成日**: 2026-01-02
+**最終更新日**: 2026-01-02
 **作成者**: Takashi.Takenouchi
+**更新者**: Takashi.Takenouchi
