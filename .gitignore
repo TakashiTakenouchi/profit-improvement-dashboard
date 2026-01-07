@@ -20,7 +20,7 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual environments
+# Virtual Environment
 venv/
 ENV/
 env/
@@ -31,6 +31,10 @@ env/
 .vscode/
 *.swp
 *.swo
+*~
+
+# Streamlit
+.streamlit/secrets.toml
 
 # Jupyter
 .ipynb_checkpoints/
@@ -40,12 +44,25 @@ autogluon_ts_models/
 
 # Data files (keep only sample/test data)
 *.xlsx
+*.xls
 *.csv
+!requirements.txt
 !streamlit_app/data/*.xlsx
+!data/*.xlsx
+
+# Model files
+*.pkl
+*.joblib
+
+# Logs
+*.log
+logs/
 
 # Temp files
 nul
 =1.0
+temp/
+tmp/
 
 # Output directories
 output/
