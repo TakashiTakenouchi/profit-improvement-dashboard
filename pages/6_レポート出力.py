@@ -4,16 +4,23 @@
 改善結果のエクスポート
 
 【更新履歴】
+- 2026-01-07: シナリオ1〜5と推奨アクションの画面表示・ダウンロード機能を追加
 - 2026-01-07: Case 1-5のケース別コメント機能を追加
 """
 import streamlit as st
 import pandas as pd
 import io
 from datetime import datetime
+from pathlib import Path
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# パス設定
+BASE_DIR = Path(__file__).parent.parent
+DOCS_DIR = BASE_DIR / "docs"
+OUTPUT_DIR = BASE_DIR / "output"
 
 from components.auth import check_authentication, show_login_form, show_logout_button
 from utils.optimization import get_monthly_comparison
@@ -337,105 +344,590 @@ def main():
         else:
             st.warning("⚠️ 元データなし")
 
-    if not has_optimized:
-        st.info("💡 最適化を実行すると、改善後のデータをダウンロードできます。")
-        st.markdown("「3_目標設定」→「4_最適化実行」の順に進んでください。")
-        return
+    st.markdown("---")
+
+    # =====================================================
+    # レポート種類の選択
+    # =====================================================
+    st.markdown("### 📦 レポート選択")
+
+    report_type = st.radio(
+        "表示するレポートを選択してください",
+        [
+            "📄 最適化結果レポート",
+            "🎯 シナリオ1〜5と推奨アクション",
+            "📊 統計分析サマリーレポート",
+            "📈 統計分析詳細レポート（TOP5要因）",
+            "📥 データエクスポート"
+        ],
+        horizontal=False
+    )
 
     st.markdown("---")
 
-    # エクスポートオプション
-    st.markdown("### 📦 エクスポート")
+    # =====================================================
+    # 1. 最適化結果レポート
+    # =====================================================
+    if report_type == "📄 最適化結果レポート":
+        st.markdown("## 📄 最適化結果レポート")
 
-    tab1, tab2, tab3 = st.tabs(["📊 改善P/L", "📄 分析レポート", "📈 詳細データ"])
+        if not has_optimized:
+            st.warning("⚠️ 最適化がまだ実行されていません。")
+            st.info("「3_目標設定」→「4_最適化実行」の順に進んでください。")
+        else:
+            params = st.session_state['optimization_params']
+            metrics = st.session_state['optimization_metrics']
+            logistic_results = st.session_state.get('logistic_results')
 
-    with tab1:
-        st.markdown("#### 改善後 損益計算書データ")
+            # レポート生成
+            report = generate_summary_report(params, metrics, logistic_results)
 
-        df_optimized = st.session_state['optimized_data']
-        params = st.session_state['optimization_params']
+            # 表示モード選択
+            view_mode = st.radio(
+                "表示モード",
+                ["📖 画面表示", "📥 ダウンロード"],
+                horizontal=True,
+                key="opt_view_mode"
+            )
 
-        # 対象データの抽出
-        target_df = df_optimized.loc[params['target_indices']].copy()
+            if view_mode == "📖 画面表示":
+                st.markdown("---")
+                st.markdown(report)
+            else:
+                st.markdown("---")
+                st.markdown("#### ダウンロード")
+                col1, col2 = st.columns(2)
 
-        st.dataframe(target_df.head(20), use_container_width=True)
-        st.markdown(f"**データサイズ:** {len(target_df)}行")
+                with col1:
+                    st.download_button(
+                        label="📥 レポートをダウンロード (Markdown)",
+                        data=report,
+                        file_name=f"optimization_report_{params['store']}_{datetime.now().strftime('%Y%m%d')}.md",
+                        mime="text/markdown",
+                        use_container_width=True
+                    )
 
-        # Excel出力
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_optimized.to_excel(writer, sheet_name='全データ', index=False)
-            target_df.to_excel(writer, sheet_name='対象期間', index=False)
+                with col2:
+                    # Excel出力
+                    df_optimized = st.session_state['optimized_data']
+                    target_df = df_optimized.loc[params['target_indices']].copy()
 
-            # 比較データ
-            if has_metrics:
-                comparison_df = get_monthly_comparison(
-                    st.session_state['uploaded_data'],
-                    df_optimized,
-                    params['target_indices']
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        df_optimized.to_excel(writer, sheet_name='全データ', index=False)
+                        target_df.to_excel(writer, sheet_name='対象期間', index=False)
+                        if has_metrics:
+                            comparison_df = get_monthly_comparison(
+                                st.session_state['uploaded_data'],
+                                df_optimized,
+                                params['target_indices']
+                            )
+                            comparison_df.to_excel(writer, sheet_name='改善前後比較', index=False)
+                    output.seek(0)
+
+                    st.download_button(
+                        label="📥 改善P/Lをダウンロード (Excel)",
+                        data=output,
+                        file_name=f"improved_pl_{params['store']}_{params['year']}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+
+    # =====================================================
+    # 2. シナリオ1〜5と推奨アクション
+    # =====================================================
+    elif report_type == "🎯 シナリオ1〜5と推奨アクション":
+        st.markdown("## 🎯 シナリオ1〜5と推奨アクション")
+        st.markdown("""
+        最適化における5つのシナリオ（Case 1〜5）と各シナリオの推奨アクションを一覧表示します。
+        赤字月数に応じた戦略的アプローチを確認できます。
+        """)
+
+        # 表示モード選択
+        view_mode = st.radio(
+            "表示モード",
+            ["📖 画面表示", "📥 ダウンロード"],
+            horizontal=True,
+            key="scenario_view_mode"
+        )
+
+        if view_mode == "📖 画面表示":
+            st.markdown("---")
+
+            # シナリオ比較表
+            st.markdown("### 📋 シナリオ比較一覧")
+            scenario_df = pd.DataFrame({
+                "シナリオ": ["Case 1", "Case 2", "Case 3", "Case 4", "Case 5"],
+                "赤字月数": ["0ヶ月", "1ヶ月", "2ヶ月", "3ヶ月", "4ヶ月"],
+                "黒字化率": ["100%", "89%", "78%", "67%", "56%"],
+                "難易度": ["高", "中〜高", "中", "低〜中", "低"],
+                "推奨度": ["理想的だが段階的アプローチ推奨", "達成可能な挑戦目標", "バランス型の現実的目標", "段階的改善の第一歩", "現状維持・ベースライン"]
+            })
+            st.dataframe(scenario_df, use_container_width=True, hide_index=True)
+
+            st.markdown("---")
+
+            # 各シナリオの詳細
+            st.markdown("### 📖 シナリオ詳細")
+
+            for deficit_months in range(5):
+                case_info = CASE_COMMENTS[deficit_months]
+                with st.expander(f"📌 {case_info['title']}", expanded=(deficit_months == 0)):
+                    st.markdown(f"**概要:** {case_info['summary']}")
+                    st.markdown("---")
+                    st.markdown("**詳細分析:**")
+                    st.markdown(case_info['analysis'])
+                    st.markdown("---")
+                    st.info(f"**推奨事項:** {case_info['recommendation']}")
+
+            st.markdown("---")
+
+            # 推奨アクションサマリー
+            st.markdown("### 🎯 推奨アクション総合サマリー")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("#### 短期施策（1-3ヶ月）")
+                st.markdown("""
+                1. **売上カテゴリの強化**
+                   - WOMEN'S_JACKETS2の重点販売
+                   - 季節に応じた商品展開
+                2. **客数増加施策**
+                   - イベント企画
+                   - SNSマーケティング強化
+                3. **コスト見直し**
+                   - 赤字月の変動費抑制
+                """)
+
+            with col2:
+                st.markdown("#### 中長期施策（3-12ヶ月）")
+                st.markdown("""
+                1. **季節戦略の最適化**
+                   - 閑散期（5-7月）の対策強化
+                   - 繁忙期（10-12月）の売上最大化
+                2. **在庫・人員管理**
+                   - 赤字月の在庫最小化
+                   - 効率的な人員配置
+                3. **継続的改善**
+                   - 時系列予測の活用
+                   - PDCAサイクルの確立
+                """)
+
+        else:
+            st.markdown("---")
+            st.markdown("#### ダウンロード")
+
+            # シナリオレポートのMarkdown生成
+            scenario_report = f"""# シナリオ1〜5と推奨アクション
+
+**生成日時:** {datetime.now().strftime('%Y年%m月%d日 %H:%M')}
+
+---
+
+## シナリオ比較一覧
+
+| シナリオ | 赤字月数 | 黒字化率 | 難易度 | 推奨度 |
+|---------|---------|---------|--------|--------|
+| Case 1 | 0ヶ月 | 100% | 高 | 理想的だが段階的アプローチ推奨 |
+| Case 2 | 1ヶ月 | 89% | 中〜高 | 達成可能な挑戦目標 |
+| Case 3 | 2ヶ月 | 78% | 中 | バランス型の現実的目標 |
+| Case 4 | 3ヶ月 | 67% | 低〜中 | 段階的改善の第一歩 |
+| Case 5 | 4ヶ月 | 56% | 低 | 現状維持・ベースライン |
+
+---
+
+## シナリオ詳細
+
+"""
+            # 各シナリオの詳細を追加
+            for deficit_months in range(5):
+                case_info = CASE_COMMENTS[deficit_months]
+                scenario_report += f"""
+### {case_info['title']}
+
+**概要:** {case_info['summary']}
+
+{case_info['analysis']}
+
+**推奨事項:** {case_info['recommendation']}
+
+---
+"""
+
+            scenario_report += """
+## 推奨アクション総合サマリー
+
+### 短期施策（1-3ヶ月）
+
+1. **売上カテゴリの強化**
+   - WOMEN'S_JACKETS2の重点販売
+   - 季節に応じた商品展開
+
+2. **客数増加施策**
+   - イベント企画
+   - SNSマーケティング強化
+
+3. **コスト見直し**
+   - 赤字月の変動費抑制
+
+### 中長期施策（3-12ヶ月）
+
+1. **季節戦略の最適化**
+   - 閑散期（5-7月）の対策強化
+   - 繁忙期（10-12月）の売上最大化
+
+2. **在庫・人員管理**
+   - 赤字月の在庫最小化
+   - 効率的な人員配置
+
+3. **継続的改善**
+   - 時系列予測の活用
+   - PDCAサイクルの確立
+
+---
+
+*このレポートはAI Agents営業利益改善ダッシュボードにより自動生成されました*
+"""
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.download_button(
+                    label="📥 シナリオレポートをダウンロード (Markdown)",
+                    data=scenario_report,
+                    file_name=f"scenario_report_{datetime.now().strftime('%Y%m%d')}.md",
+                    mime="text/markdown",
+                    use_container_width=True
                 )
-                comparison_df.to_excel(writer, sheet_name='改善前後比較', index=False)
 
-        output.seek(0)
+            with col2:
+                # CSVでもダウンロード可能に
+                scenario_csv_df = pd.DataFrame({
+                    "シナリオ": ["Case 1", "Case 2", "Case 3", "Case 4", "Case 5"],
+                    "赤字月数": [0, 1, 2, 3, 4],
+                    "黒字化率": ["100%", "89%", "78%", "67%", "56%"],
+                    "難易度": ["高", "中〜高", "中", "低〜中", "低"],
+                    "概要": [CASE_COMMENTS[i]["summary"] for i in range(5)],
+                    "推奨事項": [CASE_COMMENTS[i]["recommendation"] for i in range(5)]
+                })
+                csv_data = scenario_csv_df.to_csv(index=False, encoding='utf-8-sig')
+                st.download_button(
+                    label="📥 シナリオ比較表をダウンロード (CSV)",
+                    data=csv_data,
+                    file_name=f"scenario_comparison_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
 
-        st.download_button(
-            label="📥 改善P/Lをダウンロード (Excel)",
-            data=output,
-            file_name=f"improved_pl_{params['store']}_{params['year']}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    # =====================================================
+    # 3. 統計分析サマリーレポート
+    # =====================================================
+    elif report_type == "📊 統計分析サマリーレポート":
+        st.markdown("## 📊 統計分析サマリーレポート")
+        st.markdown("""
+        黒字要因TOP5の確率分布特性を分析し、時系列予測モデル選定の考慮事項をまとめたレポートです。
+        """)
+
+        # 表示モード選択
+        view_mode = st.radio(
+            "表示モード",
+            ["📖 画面表示", "📥 ダウンロード"],
+            horizontal=True,
+            key="stat_view_mode"
         )
 
-    with tab2:
-        st.markdown("#### 分析サマリーレポート")
+        report_path = DOCS_DIR / "Top5_Factors_Analysis_Report.md"
 
-        params = st.session_state['optimization_params']
-        metrics = st.session_state['optimization_metrics']
-        logistic_results = st.session_state.get('logistic_results')
+        if report_path.exists():
+            with open(report_path, "r", encoding="utf-8") as f:
+                statistical_report = f.read()
 
-        report = generate_summary_report(params, metrics, logistic_results)
+            if view_mode == "📖 画面表示":
+                st.markdown("---")
+                # サマリー表示（最初のセクションのみ）
+                st.markdown("### 📋 分析概要")
 
-        st.markdown(report)
+                st.markdown("""
+                | 順位 | フィールド | 列番号 | オッズ比 |
+                |------|------------|--------|----------|
+                | 1位 | WOMEN'S_JACKETS2 | O列 | 最高 |
+                | 2位 | Number_of_guests | AA列 | 高 |
+                | 3位 | WOMEN'S_ONEPIECE | T列 | 高 |
+                | 4位 | Mens_KNIT | P列 | 中 |
+                | 5位 | Mens_PANTS | Q列 | 中 |
+                """)
 
-        st.download_button(
-            label="📥 レポートをダウンロード (Markdown)",
-            data=report,
-            file_name=f"analysis_report_{params['store']}_{datetime.now().strftime('%Y%m%d')}.md",
-            mime="text/markdown"
+                st.markdown("### 📈 分布特性サマリー")
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.info("""
+                    **負の二項分布 適用対象:**
+                    - Number_of_guests（分散/平均比=226）
+                    - Mens_PANTS（分散/平均比=11.2）
+                    """)
+
+                with col2:
+                    st.info("""
+                    **ゼロ過剰ポアソン分布 適用対象:**
+                    - WOMEN'S_ONEPIECE（ゼロ率13.4%）
+                    - Mens_KNIT
+                    - Mens_PANTS
+                    """)
+
+                st.markdown("### 🔬 モデル比較結果")
+                st.success("""
+                **DeepAR-NegBin vs Chronos-Bolt 比較（Mens_PANTS）:**
+                - DeepAR-NegBin: WQL = 0.2200 ✓ Best
+                - Chronos-Bolt: WQL = 0.2337
+                - **結論**: 過分散データには負の二項分布モデルが6.2%優れた精度
+                """)
+
+                st.markdown("### 🎯 推奨モデル")
+                recommendations = pd.DataFrame({
+                    "カテゴリ": ["WOMEN'S_JACKETS2", "Number_of_guests", "WOMEN'S_ONEPIECE", "Mens_KNIT", "Mens_PANTS"],
+                    "推奨モデル": ["Chronos2 + TFT", "DeepAR (NegBin)", "Chronos2 + TFT", "Chronos2", "DeepAR (NegBin)"],
+                    "理由": ["季節性＋イベント需要", "極度の過分散", "ゼロ過剰＋季節性", "ポアソン分布適合", "過分散＋ゼロ過剰"]
+                })
+                st.dataframe(recommendations, use_container_width=True, hide_index=True)
+
+            else:
+                st.markdown("---")
+                st.download_button(
+                    label="📥 統計分析レポートをダウンロード (Markdown)",
+                    data=statistical_report,
+                    file_name="Top5_Factors_Analysis_Report.md",
+                    mime="text/markdown",
+                    use_container_width=True
+                )
+        else:
+            st.warning(f"統計分析レポートが見つかりません: {report_path}")
+
+    # =====================================================
+    # 4. 統計分析詳細レポート
+    # =====================================================
+    elif report_type == "📈 統計分析詳細レポート（TOP5要因）":
+        st.markdown("## 📈 統計分析詳細レポート")
+        st.markdown("""
+        TOP5要因の詳細な確率分布分析、ヒストグラム、モデル比較結果を含む完全版レポートです。
+        """)
+
+        # 表示モード選択
+        view_mode = st.radio(
+            "表示モード",
+            ["📖 画面表示", "📥 ダウンロード"],
+            horizontal=True,
+            key="detail_view_mode"
         )
 
-    with tab3:
-        st.markdown("#### 詳細データエクスポート")
+        report_path = DOCS_DIR / "Top5_Factors_Analysis_Report.md"
+
+        if view_mode == "📖 画面表示":
+            st.markdown("---")
+
+            # セクション選択
+            section = st.selectbox(
+                "表示セクション",
+                ["全文表示", "ヒストグラム分析", "確率分布理論", "モデル比較結果"]
+            )
+
+            if section == "全文表示":
+                if report_path.exists():
+                    with open(report_path, "r", encoding="utf-8") as f:
+                        full_report = f.read()
+                    st.markdown(full_report)
+                else:
+                    st.warning("レポートファイルが見つかりません")
+
+            elif section == "ヒストグラム分析":
+                st.markdown("### 📈 ヒストグラム分析")
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    monthly_hist = OUTPUT_DIR / "top5_factors_histogram.png"
+                    if monthly_hist.exists():
+                        st.markdown("**月次データ分布**")
+                        st.image(str(monthly_hist), use_container_width=True)
+                    else:
+                        st.info("月次ヒストグラム画像がありません")
+
+                with col2:
+                    daily_hist = OUTPUT_DIR / "daily_quantity_histogram.png"
+                    if daily_hist.exists():
+                        st.markdown("**日次販売数量分布**")
+                        st.image(str(daily_hist), use_container_width=True)
+                    else:
+                        st.info("日次ヒストグラム画像がありません")
+
+                st.markdown("""
+                **分析所見:**
+                - 全カテゴリで**分散/平均比 > 1**（過分散）
+                - 全カテゴリで**ゼロ率がポアソン期待値を大幅に超過**（ゼロ過剰）
+                - 高い歪度・尖度 → 右裾が重い分布
+                """)
+
+            elif section == "確率分布理論":
+                st.markdown("### 📐 確率分布理論")
+
+                tab_nb, tab_zip = st.tabs(["負の二項分布", "ゼロ過剰ポアソン分布"])
+
+                with tab_nb:
+                    st.markdown("""
+                    ### 負の二項分布（Negative Binomial Distribution）
+
+                    **適用対象**: Number_of_guests, WOMEN'S_ONEPIECE, Mens_PANTS
+
+                    #### 特徴
+                    | 特性 | 説明 |
+                    |------|------|
+                    | 平均 | μ = r(1-p)/p |
+                    | 分散 | σ² = r(1-p)/p² |
+                    | **過分散対応** | σ² > μ（分散が平均より大きい場合に適切） |
+
+                    #### Number_of_guestsへの適用理由
+                    - 分散/平均比 = **225.95**（極度の過分散）
+                    - 客数は「来店イベント」の集積であり、日によってばらつきが大きい
+                    """)
+
+                with tab_zip:
+                    st.markdown("""
+                    ### ゼロ過剰ポアソン分布（Zero-Inflated Poisson, ZIP）
+
+                    **適用対象**: WOMEN'S_ONEPIECE, Mens_KNIT, Mens_PANTS
+
+                    #### 特徴
+                    | 特性 | 説明 |
+                    |------|------|
+                    | 構造的ゼロ | 「売れない日」が存在（店休日、在庫切れ等） |
+                    | サンプリングゼロ | たまたま売れなかった日 |
+
+                    #### WOMEN'S_ONEPIECEのゼロ過剰検証結果
+                    | 指標 | 値 |
+                    |------|-----|
+                    | 実際のゼロ率 | 13.4% |
+                    | ポアソン期待ゼロ率 | 0.5% |
+                    | **ゼロ過剰度** | **13.0%pt** |
+
+                    → ポアソン分布の26倍のゼロが発生 → **ZIPが適切**
+                    """)
+
+            elif section == "モデル比較結果":
+                st.markdown("### 🔬 AutoGluon-TimeSeries モデル比較結果")
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.markdown("#### データ特性分析結果")
+                    data_df = pd.DataFrame({
+                        "項目": ["データ行数", "ItemCode数", "平均販売数量", "分散", "分散/平均比"],
+                        "値": ["12,438行", "3", "4.00個", "44.83", "11.20"],
+                        "解釈": ["日次販売データ", "商品SKU", "低頻度販売", "高分散", "極度の過分散"]
+                    })
+                    st.dataframe(data_df, use_container_width=True, hide_index=True)
+
+                with col2:
+                    st.markdown("#### モデル比較結果（WQLスコア）")
+                    model_df = pd.DataFrame({
+                        "モデル": ["DeepAR-NegBin", "Chronos-Bolt"],
+                        "WQL": [0.2200, 0.2337],
+                        "訓練時間": ["150.5秒", "1.8秒"],
+                        "備考": ["Best Model ✓", "Zero-shot"]
+                    })
+                    st.dataframe(model_df, use_container_width=True, hide_index=True)
+
+                st.bar_chart(pd.DataFrame({
+                    "モデル": ["DeepAR-NegBin", "Chronos-Bolt"],
+                    "WQL": [0.2200, 0.2337]
+                }).set_index("モデル"))
+
+        else:
+            st.markdown("---")
+            st.markdown("#### ダウンロード")
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                if report_path.exists():
+                    with open(report_path, "r", encoding="utf-8") as f:
+                        full_report = f.read()
+                    st.download_button(
+                        label="📥 フルレポート (MD)",
+                        data=full_report,
+                        file_name="Top5_Factors_Analysis_Report.md",
+                        mime="text/markdown",
+                        use_container_width=True
+                    )
+
+            with col2:
+                monthly_hist = OUTPUT_DIR / "top5_factors_histogram.png"
+                if monthly_hist.exists():
+                    with open(monthly_hist, "rb") as f:
+                        st.download_button(
+                            label="📥 月次ヒストグラム (PNG)",
+                            data=f.read(),
+                            file_name="top5_factors_histogram.png",
+                            mime="image/png",
+                            use_container_width=True
+                        )
+
+            with col3:
+                daily_hist = OUTPUT_DIR / "daily_quantity_histogram.png"
+                if daily_hist.exists():
+                    with open(daily_hist, "rb") as f:
+                        st.download_button(
+                            label="📥 日次ヒストグラム (PNG)",
+                            data=f.read(),
+                            file_name="daily_quantity_histogram.png",
+                            mime="image/png",
+                            use_container_width=True
+                        )
+
+    # =====================================================
+    # 5. データエクスポート
+    # =====================================================
+    elif report_type == "📥 データエクスポート":
+        st.markdown("## 📥 データエクスポート")
+        st.markdown("各種データをCSV/Excel形式でダウンロードできます。")
 
         col1, col2 = st.columns(2)
 
         with col1:
+            st.markdown("#### ロジスティック回帰結果")
             if has_logistic:
-                st.markdown("**ロジスティック回帰結果**")
                 logistic_df = st.session_state['logistic_results']
+                st.dataframe(logistic_df.head(10), use_container_width=True)
                 csv = logistic_df.to_csv(index=False, encoding='utf-8-sig')
                 st.download_button(
                     label="📥 オッズ比データ (CSV)",
                     data=csv,
                     file_name="logistic_regression_results.csv",
-                    mime="text/csv"
+                    mime="text/csv",
+                    use_container_width=True
                 )
+            else:
+                st.info("ロジスティック回帰を実行してください")
 
         with col2:
-            if has_metrics:
-                st.markdown("**改善前後比較**")
+            st.markdown("#### 改善前後比較")
+            if has_optimized and has_metrics:
                 params = st.session_state['optimization_params']
                 comparison_df = get_monthly_comparison(
                     st.session_state['uploaded_data'],
                     st.session_state['optimized_data'],
                     params['target_indices']
                 )
+                st.dataframe(comparison_df, use_container_width=True)
                 csv = comparison_df.to_csv(index=False, encoding='utf-8-sig')
                 st.download_button(
                     label="📥 月別比較データ (CSV)",
                     data=csv,
                     file_name="monthly_comparison.csv",
-                    mime="text/csv"
+                    mime="text/csv",
+                    use_container_width=True
                 )
+            else:
+                st.info("最適化を実行してください")
 
     # フッター
     st.markdown("---")
