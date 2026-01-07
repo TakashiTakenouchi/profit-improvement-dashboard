@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-PuLP最適化ユーティリティ
+PuLP最適化ユーティリティ（改良版）
 営業利益の最適化を実行
+
+【改良点】
+- 要因ベースの最適化アルゴリズム
+- target_deficit_months = 0, 1, 2, 3, ... n_months まで全て対応
+- 元データに赤字月があっても正常に動作
 """
 import pandas as pd
 import numpy as np
@@ -13,17 +18,27 @@ from typing import Tuple, List, Dict, Optional
 COST_FIELDS = ['rent', 'personnel_expenses', 'depreciation',
                'sales_promotion', 'head_office_expenses']
 
+# 売上カテゴリ（オッズ比TOP5から、Number_of_guestsを除く）
+TOP5_SALES_CATEGORIES = ["WOMEN'S_JACKETS2", "WOMEN'S_ONEPIECE", 'Mens_KNIT', 'Mens_PANTS']
+
 
 def run_pulp_optimization(df: pd.DataFrame, target_indices: List[int],
                           target_deficit_months: int = 4,
                           variance_ratio: float = 0.3) -> Tuple[pd.DataFrame, Dict]:
     """
-    PuLPによる営業利益最適化
+    要因ベースの営業利益最適化（改良版）
+
+    【ロジック】
+    1. 赤字月を選定（Operating_profitが低い順）
+    2. 黒字月はgross_profitを増加させて黒字を確保
+    3. 赤字月はgross_profitを減少させて赤字を発生
+    4. 年間Operating_profit合計を維持
+    5. operating_costは結果として逆算
 
     Args:
         df: 元データフレーム
         target_indices: 最適化対象のインデックス
-        target_deficit_months: 目標赤字月数
+        target_deficit_months: 目標赤字月数（0〜n_monthsまで対応）
         variance_ratio: 変動幅（±30%なら0.3）
 
     Returns:
@@ -33,66 +48,102 @@ def run_pulp_optimization(df: pd.DataFrame, target_indices: List[int],
     df_result = df.copy()
     n_months = len(target_indices)
 
+    # 入力検証
+    target_deficit_months = max(0, min(target_deficit_months, n_months))
+
     # 元データの取得
     gross_profits = [df.loc[idx, 'gross_profit'] for idx in target_indices]
     original_op_costs = [df.loc[idx, 'operating_cost'] for idx in target_indices]
     original_op_profits = [df.loc[idx, 'Operating_profit'] for idx in target_indices]
+    total_original_op_profit = sum(original_op_profits)
 
-    # 手動最適化アルゴリズム
-    # Operating_profitが低い順に赤字月を選択
     np.random.seed(42)
 
-    sorted_month_indices = sorted(
-        range(n_months),
-        key=lambda i: original_op_profits[i]
-    )
+    # ソート（Operating_profitが低い順）
+    sorted_month_indices = sorted(range(n_months), key=lambda i: original_op_profits[i])
     deficit_month_indices = sorted_month_indices[:target_deficit_months]
     surplus_month_indices = sorted_month_indices[target_deficit_months:]
 
-    # 赤字月のOperating_profit（負の値）
-    deficit_target_profits = []
-    for i in deficit_month_indices:
-        deficit_amount = abs(original_op_profits[i]) * np.random.uniform(0.1, 0.5)
-        deficit_target_profits.append(-deficit_amount)
-
-    # 年間合計を維持
-    total_original_op_profit = sum(original_op_profits)
-    total_deficit = sum(deficit_target_profits)
-    total_required_surplus = total_original_op_profit - total_deficit
-
-    # 黒字月のOperating_profitを配分
-    surplus_coefficients = np.random.uniform(1 - variance_ratio, 1 + variance_ratio, len(surplus_month_indices))
-    surplus_base = [original_op_profits[i] for i in surplus_month_indices]
-    surplus_adjusted = [surplus_base[j] * surplus_coefficients[j] for j in range(len(surplus_month_indices))]
-    surplus_adjusted_total = sum(surplus_adjusted)
-
-    scale_factor = total_required_surplus / surplus_adjusted_total if surplus_adjusted_total != 0 else 1
-    surplus_final = [v * scale_factor for v in surplus_adjusted]
-
-    # 結果の構築
+    # 新しいOperating_profit
     new_op_profits = [0.0] * n_months
-    for j, i in enumerate(deficit_month_indices):
-        new_op_profits[i] = deficit_target_profits[j]
-    for j, i in enumerate(surplus_month_indices):
-        new_op_profits[i] = surplus_final[j]
+    new_gross_profits = gross_profits.copy()
+
+    # ========================================
+    # 赤字月の処理
+    # ========================================
+    for i in deficit_month_indices:
+        current_op = original_op_profits[i]
+        current_gp = gross_profits[i]
+        current_oc = original_op_costs[i]
+
+        # 赤字にするために必要なgross_profit減少
+        # 目標: Operating_profit = -|current_op| * random(0.1, 0.5)
+        base_amount = abs(current_op) if current_op != 0 else current_gp * 0.05
+        target_deficit = -base_amount * np.random.uniform(0.1, 0.5)
+        required_gp = current_oc + target_deficit
+
+        new_gross_profits[i] = required_gp
+        new_op_profits[i] = required_gp - current_oc
+
+    # ========================================
+    # 黒字月の処理
+    # ========================================
+    for i in surplus_month_indices:
+        current_op = original_op_profits[i]
+        current_gp = gross_profits[i]
+        current_oc = original_op_costs[i]
+
+        # 黒字を確保（元が赤字でも強制的に黒字化）
+        if current_op < 0:
+            # 赤字から黒字へ変換
+            target_surplus = abs(current_op) + current_gp * np.random.uniform(0.05, 0.15)
+        else:
+            # 既に黒字：±variance_ratioでバラつき
+            target_surplus = current_op * np.random.uniform(1 - variance_ratio, 1 + variance_ratio)
+            target_surplus = max(target_surplus, 100000)  # 最低10万円の黒字
+
+        required_gp = current_oc + target_surplus
+
+        new_gross_profits[i] = required_gp
+        new_op_profits[i] = required_gp - current_oc
+
+    # ========================================
+    # 年間合計を維持（制約）
+    # ========================================
+    new_total = sum(new_op_profits)
+    if abs(new_total) > 0:
+        scale = total_original_op_profit / new_total
+        new_op_profits = [p * scale for p in new_op_profits]
+        # gross_profitも再計算
+        new_gross_profits = [original_op_costs[i] + new_op_profits[i] for i in range(n_months)]
 
     # operating_costを逆算
-    new_op_costs = [gross_profits[i] - new_op_profits[i] for i in range(n_months)]
+    new_op_costs = [new_gross_profits[i] - new_op_profits[i] for i in range(n_months)]
 
+    # ========================================
     # DataFrameに適用
+    # ========================================
     for i, idx in enumerate(target_indices):
         old_op_cost = original_op_costs[i]
         new_op_cost = new_op_costs[i]
 
         df_result.loc[idx, 'Operating_profit'] = new_op_profits[i]
+        df_result.loc[idx, 'gross_profit'] = new_gross_profits[i]
         df_result.loc[idx, 'operating_cost'] = new_op_cost
 
         # コスト内訳を按分
-        if old_op_cost > 0:
+        if old_op_cost > 0 and new_op_cost > 0:
             ratio = new_op_cost / old_op_cost
             for field in COST_FIELDS:
                 if field in df_result.columns:
                     df_result.loc[idx, field] = df.loc[idx, field] * ratio
+
+        # 売上カテゴリも按分（オプション）
+        if gross_profits[i] > 0:
+            sales_ratio = new_gross_profits[i] / gross_profits[i]
+            for field in TOP5_SALES_CATEGORIES:
+                if field in df_result.columns:
+                    df_result.loc[idx, field] = df.loc[idx, field] * sales_ratio
 
     # judge列の再計算
     avg_op_profit = df_result['Operating_profit'].mean()
@@ -201,3 +252,41 @@ def get_monthly_comparison(df_before: pd.DataFrame, df_after: pd.DataFrame,
         })
 
     return pd.DataFrame(comparison_data)
+
+
+def get_factor_adjustments(df_before: pd.DataFrame, df_after: pd.DataFrame,
+                           target_indices: List[int]) -> pd.DataFrame:
+    """
+    要因（売上カテゴリ）の調整内容を取得
+
+    Args:
+        df_before: 最適化前のデータ
+        df_after: 最適化後のデータ
+        target_indices: 対象インデックス
+
+    Returns:
+        adjustments_df: 要因調整データフレーム
+    """
+    adjustments_data = []
+
+    for idx in target_indices:
+        date = df_before.loc[idx, 'Date']
+        if hasattr(date, 'strftime'):
+            month_str = date.strftime('%Y-%m')
+        else:
+            month_str = str(date)
+
+        row_data = {'Date': month_str}
+
+        for field in TOP5_SALES_CATEGORIES:
+            if field in df_before.columns and field in df_after.columns:
+                before_val = df_before.loc[idx, field]
+                after_val = df_after.loc[idx, field]
+                change_pct = ((after_val - before_val) / before_val * 100) if before_val != 0 else 0
+                row_data[f'{field}_before'] = before_val
+                row_data[f'{field}_after'] = after_val
+                row_data[f'{field}_change%'] = change_pct
+
+        adjustments_data.append(row_data)
+
+    return pd.DataFrame(adjustments_data)
