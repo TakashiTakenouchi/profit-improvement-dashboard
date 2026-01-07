@@ -86,9 +86,5 @@ START*.md
 INSTALLATION_STATUS.md
 FINAL_SOLUTION.md
 
-# Scripts with API keys (security)
-scripts/set_env.sh
-scripts/start_frontend.sh
-scripts/start_mlzero_complete.sh
-scripts/start_mlzero_interactive.sh
-scripts/start_mlzero_official.sh
+# Scripts folder (contains API keys)
+scripts/
