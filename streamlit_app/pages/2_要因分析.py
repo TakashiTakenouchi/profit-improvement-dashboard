@@ -109,12 +109,13 @@ def main():
                 try:
                     mip_model_info = get_model_for_mip(df_filtered)
                     st.session_state['mip_model_info'] = mip_model_info
+                    st.session_state['mip_model_error'] = None
                     r2_score = mip_model_info.get('r2_score', 0)
-                    st.success(f"✅ 分析完了！ ロジスティック回帰精度: {accuracy:.1%} | 回帰モデルR²: {r2_score:.3f}")
+                    st.session_state['analysis_success_msg'] = f"✅ 分析完了！ ロジスティック回帰精度: {accuracy:.1%} | 回帰モデルR²: {r2_score:.3f}"
                 except Exception as mip_e:
                     st.session_state['mip_model_info'] = None
-                    st.success(f"✅ 分析完了！ モデル精度: {accuracy:.1%}")
-                    st.info(f"ℹ️ ML-MIP用モデル訓練スキップ: {str(mip_e)}")
+                    st.session_state['mip_model_error'] = str(mip_e)
+                    st.session_state['analysis_success_msg'] = f"✅ 分析完了！ モデル精度: {accuracy:.1%}"
 
             except Exception as e:
                 st.error(f"❌ エラーが発生しました: {str(e)}")
@@ -124,6 +125,12 @@ def main():
     if 'logistic_results' in st.session_state:
         results_df = st.session_state['logistic_results']
         accuracy = st.session_state['logistic_accuracy']
+
+        # 分析結果メッセージを表示（セッションから）
+        if 'analysis_success_msg' in st.session_state:
+            st.success(st.session_state['analysis_success_msg'])
+        if st.session_state.get('mip_model_error'):
+            st.info(f"ℹ️ ML-MIP用モデル訓練スキップ: {st.session_state['mip_model_error']}")
 
         st.markdown("### 📊 分析結果")
 
