@@ -1,0 +1,57 @@
+TASK1:以下のfileを分析、学習して、fixed_extended_store_data_2024-FIX_kaizen_monthlyvol6_new.xlsxとtime_series_forecast_data_2024_fixed.xlsxを生成したPythonコードを調査して突き止めて
+TASK2:time_series_forecast_data_2024_fixed.xlsxのQ列；TheoreticalBasisのフィールドの分類をShop/Category単位で再度、割当てなおす
+TASK3:ロジスティック回帰分析の結果、オッズ比の黒字要因上位1位から5位までのファクターについてTheoreticalBasisのフィールドで使った分類を割当、1位から5位までの要因について数理最適化、時系列予測モデルの選定時点の考慮事項、推奨アクションを明文化して
+
+
+パス：C:\Users\竹之内隆\Documents\MBS_Lessons\MBS2025\Data Set\Ensuring consistency between tabular data and time series forecast data\
+file：fixed_extended_store_data_2024-FIX_kaizen_monthlyvol6_new.xlsx
+このfileのフィールド説明は次のファイルに記載がある
+データ項目定義.xlsx
+
+O列：WOMEN'S_JACKETS2
+AA列：Number_of_guests
+T列：WOMEN'S_ONEPIECE
+P列：Mens_KNIT
+Q列：Mens_PANTS
+黒字化の要因上位5位である
+この5つの要因データの現状を統計分析せよ
+１：確率分布、平均と分散
+
+パス："C:\Users\竹之内隆\Documents\MBS_Lessons\MBS2025\Data Set\Ensuring consistency between tabular data and time series forecast data\output\
+file：time_series_forecast_data_2024_fixed.xlsx
+
+TheoreticalBasisのフィールドで
+高価格帯→安定需要; 高級カテゴリ→正規分布; 高マージン→安定商品
+中価格帯→イベント的需要; 高級カテゴリ→正規分布; 中マージン→季節商品
+低価格帯→集中的需要; 高級カテゴリ→正規分布; 中マージン→季節商品
+高価格帯→安定需要; 季節カテゴリ→ポアソン分布; 高マージン→安定商品
+中価格帯→イベント的需要; 季節カテゴリ→ポアソン分布; 中マージン→季節商品
+低価格帯→集中的需要; 季節カテゴリ→ポアソン分布; 中マージン→季節商品
+高価格帯→安定需要; ベーシックカテゴリ→負の二項分布; 高マージン→安定商品
+中価格帯→イベント的需要; ベーシックカテゴリ→負の二項分布; 中マージン→季節商品
+低価格帯→集中的需要; ベーシックカテゴリ→負の二項分布; 中マージン→季節商品
+高価格帯→安定需要; 高級カテゴリ→正規分布; 高マージン→安定商品
+などの分類がある
+これらの分類はShop/Category/ItemCode単位で割当たっている
+一方で
+O列：WOMEN'S_JACKETS2
+T列：WOMEN'S_ONEPIECE
+P列：Mens_KNIT
+Q列：Mens_PANTS
+などはShop/Category単位で割当てなけれいけないので、そのままでは使えない
+再度、分類し直す必要がある
+さらにAA列：Number_of_guestsの確率分布がどのようなパターンをもっているのか分析してほしい
+結果的にロジスティック回帰で、オッズ比が高いとしても、実際のO列：「WOMEN'S_JACKETS2」に関して
+数理最適化を実行しても、「WOMEN'S_JACKETS2」Categoryが、特徴量として、中価格帯→イベント的需要; 高級カテゴリ→正規分布; 中マージン→季節商品であれば、
+1.販促イベントが必要条件になる。
+2.正規分布がゆえに30％レベルの増減は時系列予測が困難にありやすい
+3.季節性がつよいので、2026年1月＞2月＞3月と時期によって販売確率が逓減するやもしれない
+これらを考慮して、時系列予測を精度向上するにはChronos2で充分か否かを判定が必要
+推奨アクションは、1月中に集中して販促を実施するべきとの判断が必要ではないか
+これらの仮説を検証して
+ほかの
+T列：WOMEN'S_ONEPIECE
+P列：Mens_KNIT
+Q列：Mens_PANTS
+AA列：Number_of_guests
+について確率分布がどのようなパターンをもっているのか分析して数理最適化、時系列予測モデルの選定時点の考慮事項、推奨アクションを明文化して

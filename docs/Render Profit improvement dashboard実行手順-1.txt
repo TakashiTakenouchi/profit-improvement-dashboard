@@ -1,0 +1,44 @@
+#＃Render Profit improvement dashboard実行手順
+Renderデプロイ手順
+以下の手順でRenderにデプロイしてください:
+手順
+https://render.com にアクセスしてログイン
+New → Web Service をクリック
+GitHubリポジトリを接続
+TakashiTakenouchi/profit-improvement-dashboard を選択
+設定を確認
+項目	値
+Name	profit-improvement-dashboard
+Region	Singapore
+Branch	main
+Root Directory	（空白のまま）
+Build Command	pip install -r requirements.txt
+Start Command	streamlit run Home.py --server.port $PORT --server.address 0.0.0.0
+Create Web Service をクリック
+デプロイ完了を待つ（5-10分）
+GitHubリポジトリ: https://github.com/TakashiTakenouchi/profit-improvement-dashboard 完了した作業:
+✅ data/ フォルダ作成、サンプルデータ配置（3ファイル、約10MB）
+✅ data_loader.py Render環境パス対応に修正
+✅ .gitignore 更新（data/*.xlsxを許可）
+✅ git commit & push完了
+--------------------------------------------------------------------------------------------------
+画像を分析しました。 デプロイは成功しています！ ログに以下が表示されています:
+✅ Build successful 🎉
+✅ Your service is live 🎉
+✅ Available at your primary URL https://profit-improvement-dashboard.onrender.com
+アプリURL: https://profit-improvement-dashboard.onrender.com このURLにアクセスしてアプリを確認してください。 「Building」と表示されているのはUI上の表示遅延で、ログでは「Your service is live」となっているため、実際にはデプロイ完了しています。
+Update Todos
+
+streamlit_app/data/フォルダ作成とサンプルデータ配置
+
+data_loader.py修正（Render環境パス対応）
+
+git commit & push
+
+Renderデプロイ
+全タスク完了しました！ アクセス先: https://profit-improvement-dashboard.onrender.com ログイン情報（デフォルト）:
+ユーザー名: admin
+パスワード: admin123
+
+Shop-Category-ItemCode毎に販売実績をまとめています（2020年4月から2025年12月まで）
+
